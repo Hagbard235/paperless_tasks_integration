@@ -1,0 +1,24 @@
+{
+  "PAPERLESS_URL": "http://qnapserver:8010",
+  "PAPERLESS_TOKEN": "fa831c424aee2d144b2156b05092c9e6831e67f3",
+  "GOOGLE_CLIENT_ID": "",
+  "GOOGLE_CLIENT_SECRET": "",
+  "GOOGLE_TASKS_TOKEN": "token.json",
+  "SCOPES": [
+    "https://www.googleapis.com/auth/tasks"
+  ],
+  "ACTION_TASK_LIST_ID": "SHRGUmU5cEQ0Z0g2MlpIWg",
+  "ACTION_THRESHOLD": 49,
+  "CUSTOM_FIELD_STATUS": 4,
+  "CUSTOM_FIELD_AKTION": 5,
+  "STATUS_LABEL_TO_ID": {
+    "Unbearbeitet": "WBdb3hOCyFRkINdn",
+    "Weitergeleitet": "mn1jNm0aR7zWhQgx",
+    "Erledigt": "g6Nl8hQ56BDasAER",
+    "keine Aktion": "WjcuDvnb9wWhkSEz",
+    "Gelöscht": "iJEaIedgGFmn72dI"
+  },
+  "SERVER_HOST": "0.0.0.0",
+  "SERVER_PORT": 8080,
+  "SERVER_BASE_URL": "http://192.168.178.126:8080"
+}
