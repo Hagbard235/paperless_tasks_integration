@@ -10,6 +10,7 @@ Custom-Field-IDs und Bezeichnungen der Bearbeitungsstatus frei anpassen. Die
 Google-Token-Datei kann über `GOOGLE_TASKS_TOKEN` gewählt werden. Alle diese
 Werte werden beim Erzeugen von Links und beim Setzen der Statuswerte verwendet.
 
+
 Im Konfigurationsdialog werden die Google-Parameter (Client-ID, Secret,
 Token-Datei und Scopes) nicht mehr angezeigt, da diese üblicherweise nicht von
 Hand geändert werden.

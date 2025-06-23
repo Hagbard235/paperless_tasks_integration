@@ -51,10 +51,12 @@ if not os.path.exists(CONFIG_PATH):
         },
         "SERVER_HOST": "0.0.0.0",
         "SERVER_PORT": 8080,
+
         "SERVER_BASE_URL": "http://localhost:8080",
         "STATUS_LABEL_NEW": "Unbearbeitet",
         "STATUS_LABEL_DONE": "Erledigt",
         "GOOGLE_TASKS_TOKEN": "token.json"
+
     })
 
 # ==== GOOGLE TASKS SERVICE ====
