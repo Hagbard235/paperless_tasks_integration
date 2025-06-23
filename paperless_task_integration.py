@@ -316,7 +316,7 @@ def paperless_webhook():
     link_webui = f"{paperless_url}/documents/{doc_id}/"
     base_url = get_config("SERVER_BASE_URL", request.url_root.rstrip("/"))
     link_view_pdf = f"{base_url}/view_pdf/{doc_id}"
-    status_link = f"{base_url}/status/{doc_id}"
+    status_link = f"{base_url}/status/{doc_id}?popup=1"
     title = doc.get("title", "Paperless-Dokument")
     doc_type = doc.get("document_type")
     correspondent = doc.get("correspondent")
@@ -348,6 +348,7 @@ def get_task_for_document(service, doc_id, list_id=None):
 
 @app.route("/status/<int:doc_id>", methods=["GET", "POST"])
 def set_status(doc_id):
+    popup = request.args.get("popup") == "1"
     status_options = list(get_config("STATUS_LABEL_TO_ID").keys())
     if request.method == "POST":
         new_status = request.form.get("status")
@@ -355,9 +356,14 @@ def set_status(doc_id):
         set_bearbeitet_am(doc_id, heute)
         set_bearbeitungsstatus(doc_id, new_status)
         update_task_note_with_status(doc_id, new_status)
-        return f"<p>Status auf <b>{new_status}</b> gesetzt (bearbeitet am {heute}).<br><a href=\"{get_config('PAPERLESS_URL')}/documents/{doc_id}/\">Zurück zum Dokument</a></p>"
+        close_js = "<script>window.close();</script>" if popup else ""
+        return (
+            f"<p>Status auf <b>{new_status}</b> gesetzt (bearbeitet am {heute}).{close_js}<br>"
+            f"<a href=\"{get_config('PAPERLESS_URL')}/documents/{doc_id}/\">Zurück zum Dokument</a></p>"
+        )
     doc = get_document_meta_by_id(doc_id)
     current_status = get_bearbeitungsstatus(doc)
+    download_link = f"<p><a href='/proxy_download/{doc_id}' download>PDF herunterladen</a></p>"
     html = f"""
     <h2>Status für Dokument {doc_id} ändern</h2>
     <form method="post">
@@ -367,7 +373,10 @@ def set_status(doc_id):
       <button type="submit">Speichern</button>
     </form>
     <p>Aktueller Status: <b>{current_status}</b></p>
+    {download_link}
     """
+    if popup:
+        html = f"<html><head><title>Status</title></head><body style='font-family:sans-serif;margin:20px'>{html}</body></html>"
     return render_template_string(html)
 
 def start_periodic_completed_tasks_update(interval_minutes=5):
