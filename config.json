@@ -17,5 +17,6 @@
     "Gelöscht": "iJEaIedgGFmn72dI"
   },
   "SERVER_HOST": "0.0.0.0",
-  "SERVER_PORT": 8080
+  "SERVER_PORT": 8080,
+  "SERVER_BASE_URL": "http://localhost:8080"
 }

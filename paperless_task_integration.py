@@ -47,7 +47,10 @@ if not os.path.exists(CONFIG_PATH):
             "Erledigt": "g6Nl8hQ56BDasAER",
             "keine Aktion": "WjcuDvnb9wWhkSEz",
             "Gelöscht": "iJEaIedgGFmn72dI"
-        }
+        },
+        "SERVER_HOST": "0.0.0.0",
+        "SERVER_PORT": 8080,
+        "SERVER_BASE_URL": "http://localhost:8080"
     })
 
 # ==== GOOGLE TASKS SERVICE ====
@@ -301,8 +304,9 @@ def paperless_webhook():
         return "Bereits erledigt", 200
     paperless_url = get_config("PAPERLESS_URL")
     link_webui = f"{paperless_url}/documents/{doc_id}/"
-    link_view_pdf = f"/view_pdf/{doc_id}"
-    status_link = f"/status/{doc_id}"
+    base_url = get_config("SERVER_BASE_URL", request.url_root.rstrip("/"))
+    link_view_pdf = f"{base_url}/view_pdf/{doc_id}"
+    status_link = f"{base_url}/status/{doc_id}"
     title = doc.get("title", "Paperless-Dokument")
     doc_type = doc.get("document_type")
     correspondent = doc.get("correspondent")
@@ -435,7 +439,10 @@ def config_ui():
     custom_fields = fetch_custom_fields()
 
     html_fields = ""
+    hidden_keys = {"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_TASKS_TOKEN", "SCOPES"}
     for key, value in config.items():
+        if key in hidden_keys:
+            continue
         if key == "ACTION_TASK_LIST_ID" and task_lists:
             options = ''.join([
                 f'<option value="{tl["id"]}"{" selected" if tl["id"]==value else ""}>{tl["title"]}</option>'
