@@ -55,7 +55,49 @@ def get_tasks_service():
     creds = Credentials.from_authorized_user_file('token.json', get_config("SCOPES"))
     return build('tasks', 'v1', credentials=creds)
 
+def fetch_task_lists():
+    try:
+        service = get_tasks_service()
+        return service.tasklists().list().execute().get('items', [])
+    except Exception as e:
+        print("Fehler beim Abrufen der Task-Listen:", e)
+        return []
+
 # ==== PAPERLESS API HELPER ====
+
+def fetch_custom_fields():
+    api_url = f"{get_config('PAPERLESS_URL')}/api/custom_fields/"
+    headers = {"Authorization": f"Token {get_config('PAPERLESS_TOKEN')}"}
+    try:
+        resp = requests.get(api_url, headers=headers)
+        if resp.status_code != 200:
+            print("Fehler beim Abrufen der Custom Fields:", resp.text)
+            return []
+        data = resp.json()
+        return data.get('results', data)
+    except Exception as e:
+        print("Fehler beim Abrufen der Custom Fields:", e)
+        return []
+
+def fetch_custom_field(field_id):
+    api_url = f"{get_config('PAPERLESS_URL')}/api/custom_fields/{field_id}/"
+    headers = {"Authorization": f"Token {get_config('PAPERLESS_TOKEN')}"}
+    try:
+        resp = requests.get(api_url, headers=headers)
+        if resp.status_code != 200:
+            print("Fehler beim Abrufen von Custom Field:", resp.text)
+            return None
+        return resp.json()
+    except Exception as e:
+        print("Fehler beim Abrufen von Custom Field:", e)
+        return None
+
+def get_status_mapping_from_field(field_id):
+    field = fetch_custom_field(field_id)
+    if not field:
+        return {}
+    choices = field.get('choices') or field.get('options') or []
+    return {c.get('label'): c.get('id') for c in choices if 'label' in c and 'id' in c}
 def get_document_meta_by_id(doc_id):
     api_url = f"{get_config('PAPERLESS_URL')}/api/documents/{doc_id}/"
     headers = {"Authorization": f"Token {get_config('PAPERLESS_TOKEN')}"}
@@ -361,36 +403,63 @@ def config_ui():
     message = None
 
     if request.method == "POST":
+        # Spezielle Felder aus Dropdowns
+        if "ACTION_TASK_LIST_ID" in request.form:
+            config["ACTION_TASK_LIST_ID"] = request.form.get("ACTION_TASK_LIST_ID")
+        if "CUSTOM_FIELD_STATUS" in request.form:
+            config["CUSTOM_FIELD_STATUS"] = int(request.form.get("CUSTOM_FIELD_STATUS"))
+        if "CUSTOM_FIELD_AKTION" in request.form:
+            config["CUSTOM_FIELD_AKTION"] = int(request.form.get("CUSTOM_FIELD_AKTION"))
+
         for key in config.keys():
+            if key in ["ACTION_TASK_LIST_ID", "CUSTOM_FIELD_STATUS", "CUSTOM_FIELD_AKTION"]:
+                continue
             if key in request.form:
                 value = request.form[key]
-                # Versuche, JSON zu parsen (für Dicts und Listen)
                 try:
                     parsed = json.loads(value)
                     config[key] = parsed
                 except Exception:
                     config[key] = value
+
+        # Mapping automatisch aus Custom Field ermitteln
+        mapping = get_status_mapping_from_field(config.get("CUSTOM_FIELD_STATUS"))
+        if mapping:
+            config["STATUS_LABEL_TO_ID"] = mapping
+
         save_config(config)
         message = "Konfiguration gespeichert."
 
     # HTML-Formular generieren
+    task_lists = fetch_task_lists()
+    custom_fields = fetch_custom_fields()
+
     html_fields = ""
     for key, value in config.items():
+        if key == "ACTION_TASK_LIST_ID" and task_lists:
+            options = ''.join([
+                f'<option value="{tl["id"]}"{" selected" if tl["id"]==value else ""}>{tl["title"]}</option>'
+                for tl in task_lists
+            ])
+            html_fields += f"<label for='{key}'>{key}</label><select name='{key}'>{options}</select><br><br>"
+            continue
+        if key in ("CUSTOM_FIELD_STATUS", "CUSTOM_FIELD_AKTION") and custom_fields:
+            options = ''.join([
+                f'<option value="{cf["id"]}"{" selected" if cf["id"]==value else ""}>{cf.get("name") or cf.get("label")}</option>'
+                for cf in custom_fields
+            ])
+            html_fields += f"<label for='{key}'>{key}</label><select name='{key}'>{options}</select><br><br>"
+            continue
         field_type = "text"
         disp_value = value
         if isinstance(value, dict) or isinstance(value, list):
             disp_value = json.dumps(value, ensure_ascii=False, indent=2)
             field_type = "textarea"
         if field_type == "textarea":
-            html_fields += f"""
-            <label for="{key}">{key}</label><br>
-            <textarea name="{key}" rows="5" cols="60">{disp_value}</textarea><br><br>
-            """
+            readonly = " readonly" if key == "STATUS_LABEL_TO_ID" else ""
+            html_fields += f"<label for='{key}'>{key}</label><br><textarea name='{key}' rows='5' cols='60'{readonly}>{disp_value}</textarea><br><br>"
         else:
-            html_fields += f"""
-            <label for="{key}">{key}</label>
-            <input type="text" name="{key}" value="{disp_value}"><br><br>
-            """
+            html_fields += f"<label for='{key}'>{key}</label><input type='text' name='{key}' value='{disp_value}'><br><br>"
 
     html = f"""
     <html>
