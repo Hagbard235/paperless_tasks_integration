@@ -1,11 +1,13 @@
 {
   "PAPERLESS_URL": "http://qnapserver:8010",
-  "PAPERLESS_TOKEN": "dein_api_token",
+  "PAPERLESS_TOKEN": "fa831c424aee2d144b2156b05092c9e6831e67f3",
   "GOOGLE_CLIENT_ID": "",
   "GOOGLE_CLIENT_SECRET": "",
   "GOOGLE_TASKS_TOKEN": "token.json",
-  "SCOPES": ["https://www.googleapis.com/auth/tasks"],
-  "ACTION_TASK_LIST_ID": "",
+  "SCOPES": [
+    "https://www.googleapis.com/auth/tasks"
+  ],
+  "ACTION_TASK_LIST_ID": "SHRGUmU5cEQ0Z0g2MlpIWg",
   "ACTION_THRESHOLD": 49,
   "CUSTOM_FIELD_STATUS": 4,
   "CUSTOM_FIELD_AKTION": 5,
