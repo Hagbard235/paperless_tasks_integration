@@ -416,3 +416,16 @@ def config_ui():
     </html>
     """
     return html
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "update_tasks":
+        update_bearbeitet_am_for_completed_tasks()
+    else:
+        start_periodic_completed_tasks_update(interval_minutes=5)
+        host = get_config("SERVER_HOST", "0.0.0.0")
+        port = int(get_config("SERVER_PORT", 8080))
+        print(
+            f"Starte Webhook-Empfänger auf http://{host}:{port}/paperless_webhook"
+        )
+        app.run(host=host, port=port)
