@@ -9,6 +9,7 @@
   "ACTION_THRESHOLD": 49,
   "CUSTOM_FIELD_STATUS": 4,
   "CUSTOM_FIELD_AKTION": 5,
+  "CUSTOM_FIELD_BEARBEITET": 3,
   "STATUS_LABEL_TO_ID": {
     "Unbearbeitet": "WBdb3hOCyFRkINdn",
     "Weitergeleitet": "mn1jNm0aR7zWhQgx",
@@ -17,5 +18,8 @@
     "Gelöscht": "iJEaIedgGFmn72dI"
   },
   "SERVER_HOST": "0.0.0.0",
-  "SERVER_PORT": 8080
+  "SERVER_PORT": 8080,
+  "SERVER_BASE_URL": "http://localhost:8080",
+  "STATUS_LABEL_NEW": "Unbearbeitet",
+  "STATUS_LABEL_DONE": "Erledigt"
 }

@@ -41,18 +41,26 @@ if not os.path.exists(CONFIG_PATH):
         "ACTION_THRESHOLD": 49,
         "CUSTOM_FIELD_STATUS": 4,
         "CUSTOM_FIELD_AKTION": 5,
+        "CUSTOM_FIELD_BEARBEITET": 3,
         "STATUS_LABEL_TO_ID": {
             "Unbearbeitet": "WBdb3hOCyFRkINdn",
             "Weitergeleitet": "mn1jNm0aR7zWhQgx",
             "Erledigt": "g6Nl8hQ56BDasAER",
             "keine Aktion": "WjcuDvnb9wWhkSEz",
             "Gelöscht": "iJEaIedgGFmn72dI"
-        }
+        },
+        "SERVER_HOST": "0.0.0.0",
+        "SERVER_PORT": 8080,
+        "SERVER_BASE_URL": "http://localhost:8080",
+        "STATUS_LABEL_NEW": "Unbearbeitet",
+        "STATUS_LABEL_DONE": "Erledigt",
+        "GOOGLE_TASKS_TOKEN": "token.json"
     })
 
 # ==== GOOGLE TASKS SERVICE ====
 def get_tasks_service():
-    creds = Credentials.from_authorized_user_file('token.json', get_config("SCOPES"))
+    token_path = get_config("GOOGLE_TASKS_TOKEN", "token.json")
+    creds = Credentials.from_authorized_user_file(token_path, get_config("SCOPES"))
     return build('tasks', 'v1', credentials=creds)
 
 def fetch_task_lists():
@@ -121,8 +129,9 @@ def get_document_meta(doc_url=None, doc_id=None):
     return None
 
 def get_bearbeitet_am(doc):
+    cf_bearbeitet = get_config("CUSTOM_FIELD_BEARBEITET", 3)
     for cf in doc.get('custom_fields', []):
-        if cf['field'] == 3:
+        if cf['field'] == cf_bearbeitet:
             return cf['value']
     return None
 
@@ -133,7 +142,7 @@ def get_bearbeitungsstatus(doc):
         if cf['field'] == cf_status:
             value = cf['value']
             return status_id_to_label.get(value, value)
-    return "Unbearbeitet"
+    return get_config("STATUS_LABEL_NEW", "Unbearbeitet")
 
 def get_aktion_wert(doc):
     cf_aktion = get_config("CUSTOM_FIELD_AKTION")
@@ -154,8 +163,9 @@ def set_bearbeitet_am(doc_id, datum):
         return False
     doc = resp.json()
     custom_fields = doc.get('custom_fields', [])
+    cf_bearbeitet = get_config("CUSTOM_FIELD_BEARBEITET", 3)
     for cf in custom_fields:
-        if cf['field'] == 3:
+        if cf['field'] == cf_bearbeitet:
             cf['value'] = datum
     payload = {'custom_fields': custom_fields}
     patch_resp = requests.patch(api_url, headers=headers, json=payload)
@@ -244,6 +254,7 @@ def update_bearbeitet_am_for_completed_tasks():
         showHidden=True
     ).execute().get('items', [])
     erledigt = 0
+    done_label = get_config("STATUS_LABEL_DONE", "Erledigt")
     for task in tasks:
         if not task.get('completed'):
             continue
@@ -252,11 +263,11 @@ def update_bearbeitet_am_for_completed_tasks():
         if not match:
             continue
         doc_id = match.group(1)
-        status = get_status_from_notes(notes) or "Erledigt"
+        status = get_status_from_notes(notes) or done_label
         doc = get_document_meta_by_id(doc_id)
         set_bearbeitet_am(doc_id, heute)
-        set_bearbeitungsstatus(doc_id, "Erledigt")
-        update_task_note_with_status(doc_id, "Erledigt")
+        set_bearbeitungsstatus(doc_id, done_label)
+        update_task_note_with_status(doc_id, done_label)
         erledigt += 1
     if erledigt:
         print(f"{erledigt} Dokument(e) als erledigt markiert.")
@@ -296,19 +307,21 @@ def paperless_webhook():
     if aktion_wert <= get_config("ACTION_THRESHOLD"):
         print(f"Dokument benötigt laut KI keine Bearbeitung ({aktion_wert}%)")
         return "Keine Aufgabe erzeugt", 200
-    if status == "Erledigt":
+    if status == get_config("STATUS_LABEL_DONE", "Erledigt"):
         print(f"Dokument {doc_id} ist bereits erledigt – kein Task mehr nötig.")
         return "Bereits erledigt", 200
     paperless_url = get_config("PAPERLESS_URL")
     link_webui = f"{paperless_url}/documents/{doc_id}/"
-    link_view_pdf = f"/view_pdf/{doc_id}"
-    status_link = f"/status/{doc_id}"
+    base_url = get_config("SERVER_BASE_URL", request.url_root.rstrip("/"))
+    link_view_pdf = f"{base_url}/view_pdf/{doc_id}"
+    status_link = f"{base_url}/status/{doc_id}"
     title = doc.get("title", "Paperless-Dokument")
     doc_type = doc.get("document_type")
     correspondent = doc.get("correspondent")
     added = doc.get("added")
+    status_new = get_config("STATUS_LABEL_NEW", "Unbearbeitet")
     notes = (
-        f"Status: Unbearbeitet\n"
+        f"Status: {status_new}\n"
         f"Status bearbeiten: {status_link}\n"
         f"Typ: {doc_type}\n"
         f"Person: {correspondent}\n"
@@ -317,7 +330,7 @@ def paperless_webhook():
         f"PDF-Ansicht: {link_view_pdf}\n"
         f"Dokument-ID: {doc_id}"
     )
-    set_bearbeitungsstatus(doc_id, "Unbearbeitet")
+    set_bearbeitungsstatus(doc_id, status_new)
     create_task(title=title, notes=notes, list_id=get_config("ACTION_TASK_LIST_ID"))
     return "OK", 200
 
@@ -435,7 +448,10 @@ def config_ui():
     custom_fields = fetch_custom_fields()
 
     html_fields = ""
+    hidden_keys = {"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_TASKS_TOKEN", "SCOPES"}
     for key, value in config.items():
+        if key in hidden_keys:
+            continue
         if key == "ACTION_TASK_LIST_ID" and task_lists:
             options = ''.join([
                 f'<option value="{tl["id"]}"{" selected" if tl["id"]==value else ""}>{tl["title"]}</option>'
