@@ -24,6 +24,17 @@ Die Anwendung liest ihre Einstellungen aus `config.json`. Wichtige Parameter sin
 
 Die Datei `config.example.json` enthält Beispielwerte und dient als Vorlage. Optional kann die Pfadangabe über die Umgebungsvariable `CONFIG_PATH` geändert werden.
 
+## Google OAuth einrichten
+Um Aufgaben in Google Tasks anlegen zu können, werden OAuth-Zugangsdaten benötigt.
+Diese lassen sich in der [Google Cloud Console](https://console.cloud.google.com/)
+erstellen:
+1. Ein neues Projekt anlegen oder ein vorhandenes wählen.
+2. Unter "APIs & Dienste" → "Anmeldedaten" einen OAuth-Client des Typs
+   "Desktop-App" erzeugen.
+3. Die ausgegebene `Client-ID` und das `Client-Secret` in der `config.json` unter
+   `GOOGLE_CLIENT_ID` bzw. `GOOGLE_CLIENT_SECRET` eintragen.
+Ohne diese Werte kann die Autorisierung nicht durchgeführt werden.
+
 ## Starten der Anwendung
 Nach dem Anpassen der Konfiguration kann der Server einfach mit
 

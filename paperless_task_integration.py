@@ -356,11 +356,21 @@ def ensure_auth_for_ui():
 
 @app.route("/authorize")
 def authorize():
+    client_id = get_config("GOOGLE_CLIENT_ID")
+    client_secret = get_config("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        html = (
+            "<h2>Google OAuth konfigurieren</h2>"
+            "<p>GOOGLE_CLIENT_ID und GOOGLE_CLIENT_SECRET "
+            "müssen in der config.json gesetzt sein.</p>"
+        )
+        return html, 500
+
     flow = Flow.from_client_config(
         {
             "installed": {
-                "client_id": get_config("GOOGLE_CLIENT_ID"),
-                "client_secret": get_config("GOOGLE_CLIENT_SECRET"),
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": [url_for("oauth2callback", _external=True)],
