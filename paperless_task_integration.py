@@ -6,9 +6,21 @@ import sys
 import threading
 import time
 import json
-from flask import Flask, request, render_template_string, redirect, url_for, Response, jsonify
+from flask import (
+    Flask,
+    request,
+    render_template_string,
+    redirect,
+    url_for,
+    Response,
+    jsonify,
+    session,
+)
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import Flow
+from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
 
@@ -55,15 +67,52 @@ if not os.path.exists(CONFIG_PATH):
         "SERVER_BASE_URL": "http://localhost:8080",
         "STATUS_LABEL_NEW": "Unbearbeitet",
         "STATUS_LABEL_DONE": "Erledigt",
-        "GOOGLE_TASKS_TOKEN": "token.json"
+        "GOOGLE_TASKS_TOKEN": "token.json",
+        "FLASK_SECRET_KEY": "change-me"
 
     })
 
+# ==== GOOGLE AUTH ====
+class InvalidTokenError(Exception):
+    pass
+
 # ==== GOOGLE TASKS SERVICE ====
-def get_tasks_service():
+def load_credentials():
     token_path = get_config("GOOGLE_TASKS_TOKEN", "token.json")
-    creds = Credentials.from_authorized_user_file(token_path, get_config("SCOPES"))
-    return build('tasks', 'v1', credentials=creds)
+    if not os.path.exists(token_path):
+        return None
+    try:
+        creds = Credentials.from_authorized_user_file(
+            token_path, get_config("SCOPES")
+        )
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            with open(token_path, "w", encoding="utf-8") as f:
+                f.write(creds.to_json())
+        if not creds.valid:
+            return None
+        return creds
+    except RefreshError as e:
+        print("Google-Token ungültig:", e)
+        return None
+    except Exception as e:
+        print("Token konnte nicht geladen werden:", e)
+        return None
+
+
+def is_google_token_valid():
+    return load_credentials() is not None
+
+
+def get_tasks_service():
+    creds = load_credentials()
+    if not creds:
+        raise InvalidTokenError("Google-Token ungültig oder abgelaufen.")
+    try:
+        return build("tasks", "v1", credentials=creds)
+    except RefreshError as e:
+        print("Google-Token-Refresh fehlgeschlagen:", e)
+        raise InvalidTokenError("Google-Token ungültig oder abgelaufen.")
 
 def fetch_task_lists():
     try:
@@ -210,10 +259,14 @@ def set_bearbeitungsstatus(doc_id, status_label):
 def create_task(title, notes, list_id=None):
     if not list_id:
         list_id = get_config("ACTION_TASK_LIST_ID")
-    service = get_tasks_service()
-    body = {'title': title, 'notes': notes}
+    try:
+        service = get_tasks_service()
+    except InvalidTokenError as e:
+        print(e)
+        return
+    body = {"title": title, "notes": notes}
     task = service.tasks().insert(tasklist=list_id, body=body).execute()
-    print('Aufgabe angelegt:', task.get('title'))
+    print("Aufgabe angelegt:", task.get("title"))
 
 def is_task_already_present(service, doc_id, list_id=None):
     if not list_id:
@@ -226,7 +279,11 @@ def is_task_already_present(service, doc_id, list_id=None):
     return False
 
 def update_task_note_with_status(doc_id, new_status):
-    service = get_tasks_service()
+    try:
+        service = get_tasks_service()
+    except InvalidTokenError as e:
+        print(e)
+        return
     heute = datetime.date.today().isoformat()
     tasks = service.tasks().list(tasklist=get_config("ACTION_TASK_LIST_ID"), showCompleted=True, showHidden=True).execute().get('items', [])
     for task in tasks:
@@ -248,7 +305,11 @@ def get_status_from_notes(notes):
     return None
 
 def update_bearbeitet_am_for_completed_tasks():
-    service = get_tasks_service()
+    try:
+        service = get_tasks_service()
+    except InvalidTokenError as e:
+        print(e)
+        return
     heute = datetime.date.today().isoformat()
     tasks = service.tasks().list(
         tasklist=get_config("ACTION_TASK_LIST_ID"),
@@ -265,8 +326,6 @@ def update_bearbeitet_am_for_completed_tasks():
         if not match:
             continue
         doc_id = match.group(1)
-        status = get_status_from_notes(notes) or done_label
-        doc = get_document_meta_by_id(doc_id)
         set_bearbeitet_am(doc_id, heute)
         set_bearbeitungsstatus(doc_id, done_label)
         update_task_note_with_status(doc_id, done_label)
@@ -275,6 +334,72 @@ def update_bearbeitet_am_for_completed_tasks():
         print(f"{erledigt} Dokument(e) als erledigt markiert.")
 
 app = Flask(__name__)
+app.secret_key = get_config("FLASK_SECRET_KEY", "change-me")
+
+UI_ENDPOINTS = {
+    "set_status",
+    "view_pdf",
+    "proxy_download",
+    "config_ui",
+}
+
+
+@app.before_request
+def ensure_auth_for_ui():
+    if request.endpoint in UI_ENDPOINTS and request.endpoint not in {
+        "authorize",
+        "oauth2callback",
+    }:
+        if not is_google_token_valid():
+            return redirect(url_for("authorize"))
+
+
+@app.route("/authorize")
+def authorize():
+    flow = Flow.from_client_config(
+        {
+            "installed": {
+                "client_id": get_config("GOOGLE_CLIENT_ID"),
+                "client_secret": get_config("GOOGLE_CLIENT_SECRET"),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [url_for("oauth2callback", _external=True)],
+            }
+        },
+        scopes=get_config("SCOPES"),
+    )
+    flow.redirect_uri = url_for("oauth2callback", _external=True)
+    authorization_url, state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+    )
+    session["state"] = state
+    return redirect(authorization_url)
+
+
+@app.route("/oauth2callback")
+def oauth2callback():
+    state = session.get("state")
+    flow = Flow.from_client_config(
+        {
+            "installed": {
+                "client_id": get_config("GOOGLE_CLIENT_ID"),
+                "client_secret": get_config("GOOGLE_CLIENT_SECRET"),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [url_for("oauth2callback", _external=True)],
+            }
+        },
+        scopes=get_config("SCOPES"),
+        state=state,
+    )
+    flow.redirect_uri = url_for("oauth2callback", _external=True)
+    flow.fetch_token(authorization_response=request.url)
+    creds = flow.credentials
+    with open(get_config("GOOGLE_TASKS_TOKEN", "token.json"), "w", encoding="utf-8") as f:
+        f.write(creds.to_json())
+    return "<p>Google-Token gespeichert. Bitte Seite neu laden.</p>"
 
 @app.route("/paperless_webhook", methods=["POST"])
 def paperless_webhook():
@@ -295,7 +420,11 @@ def paperless_webhook():
         return "Fehler", 500
     aktion_wert = get_aktion_wert(doc)
     status = get_bearbeitungsstatus(doc)
-    service = get_tasks_service()
+    try:
+        service = get_tasks_service()
+    except InvalidTokenError as e:
+        print(e)
+        return "Google Auth nötig", 500
     task = get_task_for_document(service, doc_id, list_id=get_config("ACTION_TASK_LIST_ID"))
     if task:
         notes = task.get('notes', '')

@@ -24,7 +24,8 @@
 
   "SERVER_BASE_URL": "http://localhost:8080",
   "STATUS_LABEL_NEW": "Unbearbeitet",
-  "STATUS_LABEL_DONE": "Erledigt"
+  "STATUS_LABEL_DONE": "Erledigt",
+  "FLASK_SECRET_KEY": "change-me"
 }
 
 
