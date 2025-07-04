@@ -346,11 +346,14 @@ UI_ENDPOINTS = {
 
 @app.before_request
 def ensure_auth_for_ui():
-    if request.endpoint in UI_ENDPOINTS and request.endpoint not in {
-        "authorize",
-        "oauth2callback",
-    }:
+    # Alle Endpunkte, die keine Authentifizierung erfordern
+    public_endpoints = {"authorize", "oauth2callback", "paperless_webhook"}
+
+    if request.endpoint not in public_endpoints:
         if not is_google_token_valid():
+            # Speichere die ursprünglich angeforderte URL in der Session,
+            # damit wir nach dem Login dorthin zurückkehren können.
+            session["next_url"] = request.full_path
             return redirect(url_for("authorize"))
 
 
@@ -409,7 +412,12 @@ def oauth2callback():
     creds = flow.credentials
     with open(get_config("GOOGLE_TASKS_TOKEN", "token.json"), "w", encoding="utf-8") as f:
         f.write(creds.to_json())
-    return "<p>Google-Token gespeichert. Bitte Seite neu laden.</p>"
+
+    # Nach erfolgreichem Login zur ursprünglich gewünschten Seite weiterleiten
+    # oder zur Konfigurationsseite als Fallback.
+    next_url = session.pop("next_url", None)
+    return redirect(next_url or url_for("config_ui"))
+
 
 @app.route("/paperless_webhook", methods=["POST"])
 def paperless_webhook():
