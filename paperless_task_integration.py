@@ -63,12 +63,12 @@ if not os.path.exists(CONFIG_PATH):
         },
         "SERVER_HOST": "0.0.0.0",
         "SERVER_PORT": 8080,
-
-        "SERVER_BASE_URL": "http://localhost:8080",
         "STATUS_LABEL_NEW": "Unbearbeitet",
         "STATUS_LABEL_DONE": "Erledigt",
         "GOOGLE_TASKS_TOKEN": "token.json",
-        "FLASK_SECRET_KEY": "change-me"
+        "FLASK_SECRET_KEY": "change-me",
+        "GOOGLE_CLIENT_ID": "DEINE_CLIENT_ID.apps.googleusercontent.com",
+        "GOOGLE_CLIENT_SECRET": "DEIN_CLIENT_SECRET"
 
     })
 
@@ -336,25 +336,27 @@ def update_bearbeitet_am_for_completed_tasks():
 app = Flask(__name__)
 app.secret_key = get_config("FLASK_SECRET_KEY", "change-me")
 
-UI_ENDPOINTS = {
-    "set_status",
-    "view_pdf",
-    "proxy_download",
-    "config_ui",
-}
-
 
 @app.before_request
 def ensure_auth_for_ui():
-    # Alle Endpunkte, die keine Authentifizierung erfordern
-    public_endpoints = {"authorize", "oauth2callback", "paperless_webhook"}
+    # Endpunkte, die keine Google-Anmeldung erfordern
+    public_endpoints = {
+        "paperless_webhook",
+        "authorize",
+        "view_pdf",
+        "proxy_download",
+    }
 
     if request.endpoint not in public_endpoints:
         if not is_google_token_valid():
-            # Speichere die ursprünglich angeforderte URL in der Session,
-            # damit wir nach dem Login dorthin zurückkehren können.
-            session["next_url"] = request.full_path
-            return redirect(url_for("authorize"))
+            # Da der Flow jetzt manuell ist, zeigen wir eine Infoseite an
+            # statt einer automatischen Weiterleitung.
+            return (
+                "<h1>Google-Anmeldung erforderlich</h1>"
+                "<p>Dein Google-Token ist ungültig oder abgelaufen.</p>"
+                f"<p>Bitte <a href='{url_for('authorize')}'>klicke hier</a>, um dich erneut anzumelden.</p>"
+                "<p>Nach der Anmeldung musst du diese Seite eventuell neu laden.</p>"
+            ), 401
 
 
 @app.route("/authorize")
@@ -376,47 +378,25 @@ def authorize():
                 "client_secret": client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for("oauth2callback", _external=True)],
+                "redirect_uris": ["http://localhost"], # für Desktop-Flow
             }
         },
         scopes=get_config("SCOPES"),
     )
-    flow.redirect_uri = url_for("oauth2callback", _external=True)
-    authorization_url, state = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent",
-    )
-    session["state"] = state
-    return redirect(authorization_url)
 
+    # Führt den Desktop-Authentifizierungsflow aus.
+    # Öffnet den Browser und startet einen lokalen Server auf einem freien Port.
+    creds = flow.run_local_server(port=0)
 
-@app.route("/oauth2callback")
-def oauth2callback():
-    state = session.get("state")
-    flow = Flow.from_client_config(
-        {
-            "installed": {
-                "client_id": get_config("GOOGLE_CLIENT_ID"),
-                "client_secret": get_config("GOOGLE_CLIENT_SECRET"),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [url_for("oauth2callback", _external=True)],
-            }
-        },
-        scopes=get_config("SCOPES"),
-        state=state,
-    )
-    flow.redirect_uri = url_for("oauth2callback", _external=True)
-    flow.fetch_token(authorization_response=request.url)
-    creds = flow.credentials
+    # Speichert die neuen Anmeldedaten
     with open(get_config("GOOGLE_TASKS_TOKEN", "token.json"), "w", encoding="utf-8") as f:
         f.write(creds.to_json())
 
-    # Nach erfolgreichem Login zur ursprünglich gewünschten Seite weiterleiten
-    # oder zur Konfigurationsseite als Fallback.
-    next_url = session.pop("next_url", None)
-    return redirect(next_url or url_for("config_ui"))
+    return (
+        "<h1>Authentifizierung erfolgreich!</h1>"
+        "<p>Das Token wurde gespeichert. Du kannst dieses Fenster jetzt schließen.</p>"
+        "<p><a href='/config'>Zurück zur Konfiguration</a></p>"
+    )
 
 
 @app.route("/paperless_webhook", methods=["POST"])
@@ -459,10 +439,8 @@ def paperless_webhook():
     if status == get_config("STATUS_LABEL_DONE", "Erledigt"):
         print(f"Dokument {doc_id} ist bereits erledigt – kein Task mehr nötig.")
         return "Bereits erledigt", 200
-    paperless_url = get_config("PAPERLESS_URL")
-    link_webui = f"{paperless_url}/documents/{doc_id}/"
-    base_url = get_config("SERVER_BASE_URL", request.url_root.rstrip("/"))
-    link_view_pdf = f"{base_url}/view_pdf/{doc_id}"
+    # request.url_root gibt die Basis-URL der aktuellen Anfrage zurück
+    link_view_pdf = url_for("view_pdf", doc_id=doc_id, _external=True)
     status_link = f"{base_url}/status/{doc_id}?popup=1"
     title = doc.get("title", "Paperless-Dokument")
     doc_type = doc.get("document_type")
@@ -475,7 +453,6 @@ def paperless_webhook():
         f"Typ: {doc_type}\n"
         f"Person: {correspondent}\n"
         f"Hinzugefügt am: {added}\n"
-        f"Web-Ansicht: {link_webui}\n"
         f"PDF-Ansicht: {link_view_pdf}\n"
         f"Dokument-ID: {doc_id}"
     )
@@ -606,7 +583,7 @@ def config_ui():
     custom_fields = fetch_custom_fields()
 
     html_fields = ""
-    hidden_keys = {"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_TASKS_TOKEN", "SCOPES"}
+    hidden_keys = {"GOOGLE_TASKS_TOKEN", "SCOPES"}
     for key, value in config.items():
         if key in hidden_keys:
             continue
