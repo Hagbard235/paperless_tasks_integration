@@ -18,7 +18,7 @@ from flask import (
 )
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
 
@@ -371,7 +371,7 @@ def authorize():
         )
         return html, 500
 
-    flow = Flow.from_client_config(
+    flow = InstalledAppFlow.from_client_config(
         {
             "installed": {
                 "client_id": client_id,
