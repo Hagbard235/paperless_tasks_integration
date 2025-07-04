@@ -386,7 +386,11 @@ def authorize():
 
     # Führt den Desktop-Authentifizierungsflow aus.
     # Öffnet den Browser und startet einen lokalen Server auf einem freien Port.
-    creds = flow.run_local_server(port=0)
+    # Da das Skript auf einem Server (Pi) ohne grafische Oberfläche läuft,
+    # deaktivieren wir das automatische Öffnen des Browsers.
+    # Die URL wird stattdessen in der Konsole ausgegeben.
+    # host='0.0.0.0' stellt sicher, dass der temporäre Server im Netzwerk erreichbar ist.
+    creds = flow.run_local_server(host='0.0.0.0', port=0, open_browser=False)
 
     # Speichert die neuen Anmeldedaten
     with open(get_config("GOOGLE_TASKS_TOKEN", "token.json"), "w", encoding="utf-8") as f:
