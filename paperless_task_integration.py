@@ -216,30 +216,43 @@ def create_task(title, notes, list_id=None):
     print('Aufgabe angelegt:', task.get('title'))
 
 def is_task_already_present(service, doc_id, list_id=None):
-    if not list_id:
-        list_id = get_config("ACTION_TASK_LIST_ID")
-    tasks = service.tasks().list(tasklist=list_id, showCompleted=True, showHidden=True).execute().get('items', [])
+    if list_id:
+        tasks = service.tasks().list(tasklist=list_id, showCompleted=True, showHidden=True).execute().get('items', [])
+        marker = f"Dokument-ID: {doc_id}"
+        for task in tasks:
+            if marker in (task.get('notes') or ""):
+                return True
+        return False
+    else:
+        task, _ = find_task_across_lists(service, doc_id)
+        return task is not None
+
+def find_task_across_lists(service, doc_id):
     marker = f"Dokument-ID: {doc_id}"
-    for task in tasks:
-        if marker in (task.get('notes') or ""):
-            return True
-    return False
+    lists = service.tasklists().list().execute().get('items', [])
+    for tl in lists:
+        tasks = service.tasks().list(tasklist=tl['id'], showCompleted=True, showHidden=True).execute().get('items', [])
+        for task in tasks:
+            if marker in (task.get('notes') or ""):
+                return task, tl['id']
+    return None, None
 
 def update_task_note_with_status(doc_id, new_status):
     service = get_tasks_service()
     heute = datetime.date.today().isoformat()
-    tasks = service.tasks().list(tasklist=get_config("ACTION_TASK_LIST_ID"), showCompleted=True, showHidden=True).execute().get('items', [])
-    for task in tasks:
-        if f"Dokument-ID: {doc_id}" in (task.get('notes') or ""):
-            notes = task['notes'] or ""
-            # Status-Zeile ersetzen oder hinzufügen
-            if "Status:" in notes:
-                notes = re.sub(r"Status: .*", f"Status: {new_status} (am {heute})\n", notes)
-            else:
-                notes = f"Status: {new_status} (am {heute})\n" + notes
-            service.tasks().patch(tasklist=get_config("ACTION_TASK_LIST_ID"), task=task['id'], body={"notes": notes}).execute()
-            print(f"Status in Task-Notiz für Doc {doc_id} aktualisiert.")
-            break
+
+    task, list_id = find_task_across_lists(service, doc_id)
+    if not task:
+        return
+
+    notes = task.get('notes') or ""
+    # Status-Zeile ersetzen oder hinzufügen
+    if "Status:" in notes:
+        notes = re.sub(r"Status: .*", f"Status: {new_status} (am {heute})\n", notes)
+    else:
+        notes = f"Status: {new_status} (am {heute})\n" + notes
+    service.tasks().patch(tasklist=list_id, task=task['id'], body={"notes": notes}).execute()
+    print(f"Status in Task-Notiz für Doc {doc_id} aktualisiert.")
 
 def get_status_from_notes(notes):
     match = re.search(r"Status:\s*([\wäöüÄÖÜß]+)", notes)
@@ -250,27 +263,29 @@ def get_status_from_notes(notes):
 def update_bearbeitet_am_for_completed_tasks():
     service = get_tasks_service()
     heute = datetime.date.today().isoformat()
-    tasks = service.tasks().list(
-        tasklist=get_config("ACTION_TASK_LIST_ID"),
-        showCompleted=True,
-        showHidden=True
-    ).execute().get('items', [])
     erledigt = 0
     done_label = get_config("STATUS_LABEL_DONE", "Erledigt")
-    for task in tasks:
-        if not task.get('completed'):
-            continue
-        notes = task.get('notes', '')
-        match = re.search(r'Dokument-ID: (\d+)', notes)
-        if not match:
-            continue
-        doc_id = match.group(1)
-        status = get_status_from_notes(notes) or done_label
-        doc = get_document_meta_by_id(doc_id)
-        set_bearbeitet_am(doc_id, heute)
-        set_bearbeitungsstatus(doc_id, done_label)
-        update_task_note_with_status(doc_id, done_label)
-        erledigt += 1
+    lists = service.tasklists().list().execute().get('items', [])
+    for tl in lists:
+        tasks = service.tasks().list(
+            tasklist=tl['id'],
+            showCompleted=True,
+            showHidden=True
+        ).execute().get('items', [])
+        for task in tasks:
+            if not task.get('completed'):
+                continue
+            notes = task.get('notes', '')
+            match = re.search(r'Dokument-ID: (\d+)', notes)
+            if not match:
+                continue
+            doc_id = match.group(1)
+            status = get_status_from_notes(notes) or done_label
+            doc = get_document_meta_by_id(doc_id)
+            set_bearbeitet_am(doc_id, heute)
+            set_bearbeitungsstatus(doc_id, done_label)
+            update_task_note_with_status(doc_id, done_label)
+            erledigt += 1
     if erledigt:
         print(f"{erledigt} Dokument(e) als erledigt markiert.")
 
@@ -296,7 +311,7 @@ def paperless_webhook():
     aktion_wert = get_aktion_wert(doc)
     status = get_bearbeitungsstatus(doc)
     service = get_tasks_service()
-    task = get_task_for_document(service, doc_id, list_id=get_config("ACTION_TASK_LIST_ID"))
+    task, _ = find_task_across_lists(service, doc_id)
     if task:
         notes = task.get('notes', '')
         status_in_task = get_status_from_notes(notes)
@@ -337,14 +352,16 @@ def paperless_webhook():
     return "OK", 200
 
 def get_task_for_document(service, doc_id, list_id=None):
-    if not list_id:
-        list_id = get_config("ACTION_TASK_LIST_ID")
-    tasks = service.tasks().list(tasklist=list_id, showCompleted=True, showHidden=True).execute().get('items', [])
-    marker = f"Dokument-ID: {doc_id}"
-    for task in tasks:
-        if marker in (task.get('notes') or ""):
-            return task
-    return None
+    if list_id:
+        tasks = service.tasks().list(tasklist=list_id, showCompleted=True, showHidden=True).execute().get('items', [])
+        marker = f"Dokument-ID: {doc_id}"
+        for task in tasks:
+            if marker in (task.get('notes') or ""):
+                return task
+        return None
+    else:
+        task, _ = find_task_across_lists(service, doc_id)
+        return task
 
 @app.route("/status/<int:doc_id>", methods=["GET", "POST"])
 def set_status(doc_id):

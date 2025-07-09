@@ -60,6 +60,7 @@ Der Server lauscht standardmäßig unter `http://<SERVER_HOST>:<SERVER_PORT>/` u
 2. Der Server legt daraufhin eine Aufgabe in Google Tasks an, sofern das Dokument laut KI bearbeitet werden soll.
 3. Über die Statusseite kann der Bearbeitungsstatus geändert werden. Diese Änderung wird in Paperless gespeichert und in der verknüpften Google-Task-Notiz vermerkt.
 4. Ein Hintergrundjob prüft regelmäßig erledigte Aufgaben in Google Tasks und markiert die zugehörigen Paperless-Dokumente als erledigt.
+5. Der Server sucht in allen Google-Task-Listen nach vorhandenen Aufgaben, damit keine Duplikate entstehen, auch wenn Tasks verschoben werden.
 
 ## Weitere Hinweise
 - Für den Zugriff auf Google Tasks ist eine vorherige Authentifizierung notwendig. Das Token wird in der in `GOOGLE_TASKS_TOKEN` angegebenen Datei gespeichert.
