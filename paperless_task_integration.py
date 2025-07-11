@@ -9,8 +9,15 @@ import json
 from flask import Flask, request, render_template_string, redirect, url_for, Response, jsonify
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
+
+
+class TokenError(Exception):
+    """Wird ausgelöst, wenn kein gültiges Google-OAuth-Token vorhanden ist."""
+    pass
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
@@ -62,16 +69,30 @@ if not os.path.exists(CONFIG_PATH):
 # ==== GOOGLE TASKS SERVICE ====
 def get_tasks_service():
     token_path = get_config("GOOGLE_TASKS_TOKEN", "token.json")
-    creds = Credentials.from_authorized_user_file(token_path, get_config("SCOPES"))
+    scopes = get_config("SCOPES")
+    if not os.path.exists(token_path):
+        raise TokenError("Token-Datei fehlt")
+    try:
+        creds = Credentials.from_authorized_user_file(token_path, scopes)
+    except Exception as e:
+        raise TokenError("Token konnte nicht geladen werden") from e
+
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                with open(token_path, "w") as f:
+                    f.write(creds.to_json())
+            except Exception as e:
+                raise TokenError("Token konnte nicht erneuert werden") from e
+        else:
+            raise TokenError("Kein gültiges Token")
+
     return build('tasks', 'v1', credentials=creds)
 
 def fetch_task_lists():
-    try:
-        service = get_tasks_service()
-        return service.tasklists().list().execute().get('items', [])
-    except Exception as e:
-        print("Fehler beim Abrufen der Task-Listen:", e)
-        return []
+    service = get_tasks_service()
+    return service.tasklists().list().execute().get('items', [])
 
 # ==== PAPERLESS API HELPER ====
 
@@ -261,7 +282,11 @@ def get_status_from_notes(notes):
     return None
 
 def update_bearbeitet_am_for_completed_tasks():
-    service = get_tasks_service()
+    try:
+        service = get_tasks_service()
+    except TokenError as e:
+        print("Google-Token ungültig:", e)
+        return
     heute = datetime.date.today().isoformat()
     erledigt = 0
     done_label = get_config("STATUS_LABEL_DONE", "Erledigt")
@@ -290,6 +315,37 @@ def update_bearbeitet_am_for_completed_tasks():
         print(f"{erledigt} Dokument(e) als erledigt markiert.")
 
 app = Flask(__name__)
+
+
+@app.errorhandler(TokenError)
+def handle_token_error(error):
+    """Bei ungültigem Token zur OAuth-Anmeldung weiterleiten."""
+    return redirect(url_for("authorize"))
+
+
+@app.route("/authorize")
+def authorize():
+    token_path = get_config("GOOGLE_TASKS_TOKEN", "token.json")
+    client_id = get_config("GOOGLE_CLIENT_ID")
+    client_secret = get_config("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return "Client-ID oder Client-Secret fehlen in der Konfiguration", 500
+
+    flow = InstalledAppFlow.from_client_config(
+        {
+            "installed": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        },
+        scopes=get_config("SCOPES"),
+    )
+    creds = flow.run_local_server(port=0)
+    with open(token_path, "w") as token_file:
+        token_file.write(creds.to_json())
+    return "Token gespeichert. Sie können dieses Fenster schließen."
 
 @app.route("/paperless_webhook", methods=["POST"])
 def paperless_webhook():

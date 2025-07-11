@@ -54,6 +54,7 @@ Der Server lauscht standardmäßig unter `http://<SERVER_HOST>:<SERVER_PORT>/` u
 - `/status/<doc_id>` – Oberfläche zum Ändern des Bearbeitungsstatus
 - `/view_pdf/<doc_id>` und `/proxy_download/<doc_id>` – Anzeige bzw. Download der PDF-Datei
 - `/config` – einfache Weboberfläche zur Bearbeitung der Konfiguration
+- `/authorize` – Durchführen der Google-OAuth-Anmeldung
 
 ## Funktionsweise
 1. Paperless sendet per Webhook Informationen zu neu erstellten oder geänderten Dokumenten an `/paperless_webhook`.
@@ -64,7 +65,7 @@ Der Server lauscht standardmäßig unter `http://<SERVER_HOST>:<SERVER_PORT>/` u
 
 ## Weitere Hinweise
 - Für den Zugriff auf Google Tasks ist eine vorherige Authentifizierung notwendig. Das Token wird in der in `GOOGLE_TASKS_TOKEN` angegebenen Datei gespeichert.
-- Ist kein gültiges Token vorhanden, leitet der Aufruf eines UI-Endpunkts (z.B. `/view_pdf/<id>`) automatisch zur Google-Anmeldung weiter. Alternativ kann `/authorize` manuell aufgerufen werden.
+- Ist kein gültiges Token vorhanden, erfolgt automatisch eine Weiterleitung zu `/authorize`. Dort kann ein neues Token über den Google-Login erzeugt werden.
 - Die Google-Parameter (Client-ID, Secret, Token-Datei und Scopes) werden in der Konfigurationsoberfläche ausgeblendet, da sie in der Regel nicht häufig geändert werden.
 - Die Anwendung eignet sich sowohl für lokale Tests als auch für den Betrieb in einem privaten Netzwerk.
 
