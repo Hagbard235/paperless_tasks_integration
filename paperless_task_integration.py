@@ -423,15 +423,57 @@ def proxy_download(doc_id):
         }
     )
 
-@app.route("/view_pdf/<int:doc_id>")
+@app.route("/view_pdf/<int:doc_id>", methods=["GET", "POST"])
 def view_pdf(doc_id):
+    status_options = list(get_config("STATUS_LABEL_TO_ID").keys())
+    message = None
+    if request.method == "POST":
+        new_status = request.form.get("status")
+        heute = datetime.date.today().isoformat()
+        set_bearbeitet_am(doc_id, heute)
+        set_bearbeitungsstatus(doc_id, new_status)
+        update_task_note_with_status(doc_id, new_status)
+        message = f"Status auf <b>{new_status}</b> gesetzt (am {heute})."
+
+    doc = get_document_meta_by_id(doc_id)
+    current_status = get_bearbeitungsstatus(doc)
+
+    options_html = ''.join([
+        f"<option value='{s}'{' selected' if s==current_status else ''}>{s}</option>"
+        for s in status_options
+    ])
+
+    side_html = f"""
+        <form method='post'>
+          <select name='status'>
+            {options_html}
+          </select>
+          <button type='submit'>Speichern</button>
+        </form>
+        <p>Aktueller Status: <b>{current_status}</b></p>
+        <p><a href='/proxy_download/{doc_id}' download>PDF herunterladen</a></p>
+        {f'<div style="color:green">{message}</div>' if message else ''}
+    """
+
     return render_template_string(f"""
     <html>
-      <head><title>PDF-Ansicht {doc_id}</title></head>
-      <body style="margin:0">
-        <embed src="/proxy_download/{doc_id}" width="100%" height="98%" type="application/pdf">
-        <div style="text-align:center;margin-top:8px">
-          <a href="/proxy_download/{doc_id}" download>PDF herunterladen</a>
+      <head>
+        <title>PDF-Ansicht {doc_id}</title>
+        <style>
+          body, html {{ margin:0; padding:0; height:100%; }}
+          .container {{ display:flex; height:100%; }}
+          .pdf {{ flex:1; }}
+          .side {{ width:260px; padding:10px; font-family:sans-serif; background:#f0f0f0; }}
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="pdf">
+            <embed src="/proxy_download/{doc_id}" width="100%" height="100%" type="application/pdf">
+          </div>
+          <div class="side">
+            {side_html}
+          </div>
         </div>
       </body>
     </html>
